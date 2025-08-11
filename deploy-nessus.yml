@@ -1,0 +1,10 @@
+- name: Install Nessus
+  hosts: "{{ target | default('nessus_scanner') }}"  # hosts: nessus_scanner
+  become: yes
+  vars_prompt:
+    - name: "cert_password"  
+      prompt: "Password"
+      private: true
+
+  roles:
+    - role: nessus
