@@ -1,0 +1,11 @@
+---
+cert_days: "365"
+cert_country: ""
+cert_state: ""
+cert_city: ""
+cert_org: ""
+cert_ou: ""
+cert_email: ""
+file_owner: "<username>"
+file_group: "{{ file_owner }}"
+pem_file_dst: "/tmp"
