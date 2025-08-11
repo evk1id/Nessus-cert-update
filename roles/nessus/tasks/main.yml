@@ -1,0 +1,89 @@
+- name: Get Nessus username
+  command: /opt/nessus/sbin/nessuscli lsuser
+  register: result
+  changed_when: false
+  
+- name: Set the username
+  set_fact:
+    nessus_user: "{{ result.stdout }}"
+    
+- name: Auth with cert
+  command: /opt/nessus/sbin/nessuscli fix --set force_pubkey_auth=yes
+  register: result
+  failed_when:
+    - "'Successfully set' not in result.stdout"
+    - "result.rc != 0"
+  changed_when: "'Successfully set' in result.stdout"
+
+- name: Update cert
+  shell: | 
+    /opt/nessus/sbin/nessuscli mkcert-client <<EOF
+    {{ nessus_user }}
+    y
+    {{ cert_days }}
+    {{ cert_country }}
+    {{ cert_state }}
+    {{ cert_city }}
+    {{ cert_org }}
+    {{ cert_ou }}
+    {{ cert_email }}
+    y
+    n
+    EOF
+  args:
+    executable: /bin/bash
+
+- name: Copy cert-file
+  ansible.builtin.copy:
+    src: /opt/nessus/var/nessus/tmp/cert_{{ nessus_user }}.pem
+    dest: "{{ pem_file_dst }}"
+    remote_src: yes
+    owner: "{{ file_owner }}"
+    group: "{{ file_group }}"
+    
+- name: Copy key-file
+  ansible.builtin.copy:
+    src: /opt/nessus/var/nessus/tmp/key_{{ nessus_user }}.pem
+    dest: "{{ pem_file_dst }}"
+    remote_src: yes
+    owner: "{{ file_owner }}"
+    group: "{{ file_group }}"
+    
+- name: Combine cert and key into user's pem-file
+  shell: "cat {{ pem_file_dst }}/cert_*.pem {{ pem_file_dst }}/key_*.pem >> {{ pem_file_dst }}/{{ nessus_user }}.pem"
+  args:
+    executable: /bin/bash
+
+- name: Create temporary password file
+  ansible.builtin.copy:
+    content: "{{ cert_password }}"
+    dest: /tmp/pfx_pass.txt
+    mode: '0600'
+
+- name: Make pfx-cert
+  shell: openssl pkcs12 -export -out {{ pem_file_dst }}/{{ nessus_user }}.pfx -inkey {{ pem_file_dst }}/key_{{ nessus_user }}.pem -in {{ pem_file_dst }}/cert_{{ nessus_user }}.pem -passout file:/tmp/pfx_pass.txt
+  args:
+    executable: /bin/bash
+    
+- name: Delete temporary password file
+  ansible.builtin.file:
+    path: /tmp/pfx_pass.txt
+    state: absent
+
+- name: Restart nessusd
+  ansible.builtin.service:
+    name: nessusd
+    state: restarted
+    
+- name: Change file ownership, group
+  ansible.builtin.file:
+    path: "{{ pem_file_dst }}/{{ nessus_user }}.pem"
+    owner: "{{ file_owner }}"
+    group: "{{ file_group }}"
+    
+- name: Change file ownership, group 2
+  ansible.builtin.file:
+    path: "{{ pem_file_dst }}/{{ nessus_user }}.pfx"
+    owner: "{{ file_owner }}"
+    group: "{{ file_group }}"
+
